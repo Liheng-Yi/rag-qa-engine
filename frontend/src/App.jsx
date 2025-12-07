@@ -1,6 +1,105 @@
 import { useState, useRef, useEffect } from 'react'
 import './App.css'
 
+// Component to render text with citation labels
+function CitationText({ content, citations, messageId }) {
+
+  const handleCitationClick = (citationIndex) => {
+    const citationElement = document.getElementById(`citation-${messageId}-${citationIndex}`)
+    if (citationElement) {
+      citationElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      // Highlight the citation briefly
+      citationElement.style.transition = 'background-color 0.3s ease'
+      citationElement.style.backgroundColor = 'rgba(99, 102, 241, 0.2)'
+      setTimeout(() => {
+        citationElement.style.backgroundColor = ''
+      }, 1000)
+    }
+  }
+
+  // Parse content and insert citation labels
+  // Format: [citation:1] or [citation:1,2] for multiple citations
+  const renderWithCitations = () => {
+    const parts = []
+    let lastIndex = 0
+    const citationRegex = /\[citation:(\d+(?:,\d+)*)\]/g
+    let match
+    let key = 0
+
+    while ((match = citationRegex.exec(content)) !== null) {
+      // Add text before citation
+      if (match.index > lastIndex) {
+        parts.push(
+          <span key={`text-${key++}`}>
+            {content.substring(lastIndex, match.index)}
+          </span>
+        )
+      }
+
+      // Parse citation numbers
+      const citationNumbers = match[1].split(',').map(num => parseInt(num, 10))
+      
+      // Add citation badges
+      citationNumbers.forEach((citationNum, idx) => {
+        if (citationNum >= 1 && citationNum <= citations.length) {
+          parts.push(
+            <sup
+              key={`citation-${key++}`}
+              className="citation-badge"
+              onClick={() => handleCitationClick(citationNum)}
+              title={`Source ${citationNum}: ${citations[citationNum - 1]?.source || ''}`}
+            >
+              [{citationNum}]
+            </sup>
+          )
+        }
+      })
+
+      lastIndex = match.index + match[0].length
+    }
+
+    // Add remaining text
+    if (lastIndex < content.length) {
+      parts.push(
+        <span key={`text-${key++}`}>
+          {content.substring(lastIndex)}
+        </span>
+      )
+    }
+
+    // If no citation markers found, just add citations at the end of sentences
+    if (parts.length === 0) {
+      // Simple heuristic: add citations at the end
+      const sentences = content.split(/([.!?]\s+)/)
+      return sentences.map((sentence, idx) => {
+        if (idx === sentences.length - 1) {
+          // Add all citations at the end of the last sentence
+          return (
+            <span key={idx}>
+              {sentence}
+              {citations.map((_, citationIdx) => (
+                <sup
+                  key={`citation-${citationIdx}`}
+                  className="citation-badge"
+                  onClick={() => handleCitationClick(citationIdx + 1)}
+                  title={`Source ${citationIdx + 1}: ${citations[citationIdx]?.source || ''}`}
+                >
+                  [{citationIdx + 1}]
+                </sup>
+              ))}
+            </span>
+          )
+        }
+        return <span key={idx}>{sentence}</span>
+      })
+    }
+
+    return parts
+  }
+
+  return <p>{renderWithCitations()}</p>
+}
+
 function App() {
   const [messages, setMessages] = useState([
     {
@@ -45,7 +144,7 @@ function App() {
       const assistantMessage = {
         id: Date.now() + 1,
         type: 'assistant',
-        content: `This is a sample response to your question: "${userMessage.content}". In a production environment, this would be the actual answer from the LLM based on retrieved documents from the RAG system.`,
+        content: `This is a sample response to your question: "${userMessage.content}". In a production environment, this would be the actual answer from the LLM based on retrieved documents from the RAG system[citation:1]. The system uses vector similarity search to find relevant information[citation:2,3].`,
         timestamp: new Date(),
         citations: [
           { id: 1, source: 'Document A', excerpt: 'Relevant excerpt from Document A...', relevance: 0.92 },
@@ -120,11 +219,17 @@ function App() {
                       {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
                   </div>
-                  <p className="message-text">{message.content}</p>
+                  <div className="message-text">
+                    {message.citations && message.citations.length > 0 ? (
+                      <CitationText content={message.content} citations={message.citations} messageId={message.id} />
+                    ) : (
+                      <p>{message.content}</p>
+                    )}
+                  </div>
 
                   {/* Citations */}
                   {message.citations && message.citations.length > 0 && (
-                    <div className="citations">
+                    <div className="citations" id={`citations-${message.id}`}>
                       <div className="citations-header">
                         <svg className="citations-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -136,9 +241,10 @@ function App() {
                         <span>Sources ({message.citations.length})</span>
                       </div>
                       <div className="citations-list">
-                        {message.citations.map((citation) => (
-                          <div key={citation.id} className="citation-item">
+                        {message.citations.map((citation, index) => (
+                          <div key={citation.id} className="citation-item" id={`citation-${message.id}-${index + 1}`}>
                             <div className="citation-header">
+                              <span className="citation-number">[{index + 1}]</span>
                               <span className="citation-source">{citation.source}</span>
                               <span className="citation-relevance">
                                 {Math.round(citation.relevance * 100)}% match
